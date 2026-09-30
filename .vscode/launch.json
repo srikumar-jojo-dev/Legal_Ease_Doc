@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Backend (FastAPI)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "uvicorn",
+            "args": ["legalEaseAPI.main:app", "--port", "8000", "--reload"],
+            "cwd": "${workspaceFolder}/LegalEase",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Frontend (Streamlit)",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "streamlit",
+            "args": ["run", "frontend/app.py"],
+            "cwd": "${workspaceFolder}/LegalEase",
+            "console": "integratedTerminal"
+        },
+        {
+            "type": "chrome",
+            "request": "launch",
+            "name": "Launch Chrome",
+            "url": "http://localhost:8501",
+            "webRoot": "${workspaceFolder}"
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Full Stack (Backend + Frontend + Chrome)",
+            "configurations": ["Backend (FastAPI)", "Frontend (Streamlit)", "Launch Chrome"]
+        }
+    ]
+}
