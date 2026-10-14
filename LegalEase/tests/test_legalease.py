@@ -37,6 +37,29 @@ def test_generate_returns_text_and_terms():
 def test_generate_validation():
     assert client.post("/generate", json={**PAYLOAD, "doc_type": "Nope"}).status_code == 422
     assert client.post("/generate", json={**PAYLOAD, "party_a": ""}).status_code == 422
+    assert client.post("/generate", json={**PAYLOAD, "party_a": "Asha Rao", "party_b": "Asha Rao"}).status_code == 422
+    assert client.post("/generate", json={**PAYLOAD, "effective_date": "not-a-date"}).status_code == 422
+
+
+def test_empty_key_terms_are_allowed_and_generated():
+    r = client.post("/generate", json={**PAYLOAD, "key_terms": ""})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["text"]
+
+
+@pytest.mark.parametrize("language", ["English", "Tamil", "Hindi"])
+def test_each_language_generates(language):
+    r = client.post("/generate", json={**PAYLOAD, "language": language})
+    assert r.status_code == 200
+    assert r.json()["text"]
+
+
+@pytest.mark.parametrize("doc_type", ["Freelance Service Agreement", "Lease Agreement", "Non-Disclosure Agreement (NDA)"])
+def test_each_document_type_generates(doc_type):
+    r = client.post("/generate", json={**PAYLOAD, "doc_type": doc_type})
+    assert r.status_code == 200
+    assert r.json()["text"]
 
 
 @pytest.mark.parametrize("fmt,magic", [("pdf", b"%PDF"), ("docx", b"PK"), ("txt", b"LEASE")])

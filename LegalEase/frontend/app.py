@@ -11,6 +11,41 @@ import config  # noqa: E402
 
 st.set_page_config(page_title="LegalEase", page_icon="⚖️", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    .stSelectbox, .stDateInput, .stTextInput, .stTextArea {
+        margin-bottom: 0.35rem;
+    }
+    div[data-testid="stForm"] div[data-baseweb="select"] > div,
+    div[data-testid="stForm"] div[data-baseweb="select"] input,
+    div[data-testid="stForm"] div[data-testid="stTextInputRootElement"],
+    div[data-testid="stForm"] textarea,
+    div[data-testid="stForm"] input {
+        background: rgba(15, 23, 42, 0.85) !important;
+        color: #f8fafc !important;
+        border: 1px solid rgba(148, 163, 184, 0.55) !important;
+        border-radius: 0.65rem !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stForm"] label {
+        color: #e2e8f0 !important;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+    }
+    div[data-testid="stForm"] code {
+        color: #e2e8f0 !important;
+        background: transparent !important;
+        font-family: inherit !important;
+    }
+    div[data-testid="stSidebar"] {
+        background: #0f172a;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def api_get(path):
     return requests.get(f"{config.API_URL}{path}", timeout=15)
@@ -18,14 +53,35 @@ def api_get(path):
 
 def error_text(resp):
     try:
-        return resp.json().get("detail", resp.text)
+        payload = resp.json()
+        if isinstance(payload, dict):
+            detail = payload.get("detail")
+            if isinstance(detail, str):
+                return detail
+            if isinstance(detail, list):
+                return detail[0].get("msg", str(detail)) if detail else resp.text
+        return str(payload)
     except ValueError:
         return resp.text
 
 
+def friendly_error_message(resp):
+    if resp is None:
+        return "The app could not reach the backend. Please try again in a moment."
+    if resp.status_code == 429:
+        return "The AI service is busy right now. Please wait a moment and try again."
+    if resp.status_code == 504:
+        return "The AI service timed out. Please try again in a moment."
+    if resp.status_code == 503:
+        return "The backend is missing a valid API key or is temporarily unavailable."
+    if resp.status_code >= 500:
+        return "The AI service is temporarily unavailable. Please try again in a moment."
+    return error_text(resp)
+
+
 with st.sidebar:
     if Path(config.WEB_LOGO_PATH).exists():
-        st.image(str(config.WEB_LOGO_PATH), use_container_width=True)
+        st.image(str(config.WEB_LOGO_PATH), width="stretch")
     st.caption(config.DISCLAIMER)
 
 st.title("⚖️ LegalEase")
@@ -50,33 +106,74 @@ with left:
     st.subheader("1. Details")
     with st.form("doc_form"):
         doc_type = st.selectbox("Document type", meta["doc_types"])
+        party_a_role = st.selectbox(
+            "Role of Party A",
+            ["Client", "Service Provider", "Employer", "Employee", "Landlord", "Tenant",
+             "Disclosing Party", "Receiving Party", "Lender", "Borrower", "Partner A", "Party A"],
+            index=0,
+        )
         party_a = st.text_input("Party A (name)")
         party_b = st.text_input("Party B (name)")
+        party_b_role = {
+            "Client": "Service Provider",
+            "Service Provider": "Client",
+            "Employer": "Employee",
+            "Employee": "Employer",
+            "Landlord": "Tenant",
+            "Tenant": "Landlord",
+            "Disclosing Party": "Receiving Party",
+            "Receiving Party": "Disclosing Party",
+            "Lender": "Borrower",
+            "Borrower": "Lender",
+            "Partner A": "Partner B",
+            "Party A": "Party B",
+        }.get(party_a_role, "Party B")
         eff = st.date_input("Effective date", value=date.today())
         jurisdiction = st.text_input("Governing law / jurisdiction", value="India")
+        place_of_signing = st.text_input("Place of signing (optional)")
         language = st.selectbox("Language", meta["languages"])
         key_terms = st.text_area(
-            "Key terms (one per line, e.g. `Rent: Rs. 15,000 per month`)", height=150)
+            "Key terms (one per line, for example: Rent: Rs. 15,000 per month)", height=150)
         submitted = st.form_submit_button("Generate document", type="primary")
 
     if submitted:
+        errors = []
         if not party_a.strip() or not party_b.strip():
-            st.error("Please enter both party names.")
+            errors.append("Please enter both party names.")
+        if party_a.strip() and party_b.strip() and party_a.strip().lower() == party_b.strip().lower():
+            errors.append("Party A and Party B must be different people or entities.")
+        try:
+            _ = eff.strftime("%d %B %Y")
+        except Exception:
+            errors.append("Please enter a valid effective date.")
+        if errors:
+            for msg in errors:
+                st.error(msg)
         else:
-            payload = {"doc_type": doc_type, "party_a": party_a.strip(), "party_b": party_b.strip(),
-                       "effective_date": eff.strftime("%d %B %Y"), "jurisdiction": jurisdiction.strip() or "India",
-                       "key_terms": key_terms.strip(), "language": language}
+            payload = {
+                "doc_type": doc_type,
+                "party_a": party_a.strip(),
+                "party_b": party_b.strip(),
+                "party_a_role": party_a_role,
+                "party_b_role": party_b_role,
+                "effective_date": eff.strftime("%d %B %Y"),
+                "jurisdiction": jurisdiction.strip() or "India",
+                "place_of_signing": place_of_signing.strip(),
+                "key_terms": key_terms.strip(),
+                "language": language,
+            }
             with st.spinner("Drafting your document..."):
                 try:
                     r = requests.post(f"{config.API_URL}/generate", json=payload, timeout=config.REQUEST_TIMEOUT)
-                except requests.RequestException as exc:
-                    st.error(f"Request failed: {exc}")
+                except requests.RequestException:
+                    st.error(friendly_error_message(None))
                 else:
                     if r.ok:
-                        st.session_state["doc"] = r.json()
-                        st.session_state["editor"] = r.json()["text"]
+                        payload = r.json()
+                        st.session_state["doc"] = payload
+                        st.session_state["editor"] = payload["text"]
                     else:
-                        st.error(error_text(r))
+                        st.error(friendly_error_message(r))
 
 with right:
     st.subheader("2. Preview, edit & download")

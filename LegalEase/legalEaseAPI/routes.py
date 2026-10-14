@@ -1,6 +1,7 @@
 """API routes: /health, /doc-types, /generate, /export."""
 import logging
-from typing import List, Literal, Optional
+from datetime import datetime
+from typing import List, Literal
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field
@@ -8,6 +9,7 @@ from pydantic import BaseModel, Field
 import config
 from ai_core import generator
 from ai_core.gemini_generator import (DOC_TYPES, LANGUAGES, GeminiError,
+                                      GeminiRateLimitError, GeminiTimeoutError,
                                       MissingKeyError, generate_document)
 from ai_core.text_utils import build_terms_table, safe_filename
 
@@ -19,8 +21,11 @@ class GenerateRequest(BaseModel):
     doc_type: str = Field(..., max_length=80)
     party_a: str = Field(..., min_length=1, max_length=200)
     party_b: str = Field(..., min_length=1, max_length=200)
+    party_a_role: str = Field("Party A", max_length=80)
+    party_b_role: str = Field("Party B", max_length=80)
     effective_date: str = Field(..., min_length=1, max_length=60)
     jurisdiction: str = Field("India", max_length=120)
+    place_of_signing: str = Field("", max_length=200)
     key_terms: str = Field("", max_length=4000)
     language: str = Field("English", max_length=20)
 
@@ -51,14 +56,43 @@ def generate(req: GenerateRequest):
         raise HTTPException(422, f"Unknown document type. Choose one of: {list(DOC_TYPES)}")
     if req.language not in LANGUAGES:
         raise HTTPException(422, f"Unsupported language. Choose one of: {LANGUAGES}")
-    data = req.model_dump()
+
+    trimmed = {
+        "doc_type": req.doc_type.strip(),
+        "party_a": req.party_a.strip(),
+        "party_b": req.party_b.strip(),
+        "party_a_role": req.party_a_role.strip() or "Party A",
+        "party_b_role": req.party_b_role.strip() or "Party B",
+        "effective_date": req.effective_date.strip(),
+        "jurisdiction": req.jurisdiction.strip() or "India",
+        "place_of_signing": req.place_of_signing.strip(),
+        "key_terms": req.key_terms.strip(),
+        "language": req.language.strip(),
+    }
+    if not trimmed["party_a"] or not trimmed["party_b"]:
+        raise HTTPException(422, "Both party names are required.")
+    if trimmed["party_a"].lower() == trimmed["party_b"].lower():
+        raise HTTPException(422, "Party A and Party B must be different people or entities.")
+    if not trimmed["effective_date"]:
+        raise HTTPException(422, "Effective date is required.")
+    try:
+        datetime.strptime(trimmed["effective_date"], "%d %B %Y")
+    except ValueError:
+        try:
+            datetime.strptime(trimmed["effective_date"], "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(422, "Effective date must be a valid date.") from exc
+
+    data = trimmed
     try:
         text = generate_document(data)
     except MissingKeyError as exc:
-        raise HTTPException(503, str(exc))
+        logger.warning("Gemini key missing: %s", exc)
+        raise HTTPException(503, exc.user_message)
     except GeminiError as exc:
         logger.error("Document generation failed: %s", exc)
-        raise HTTPException(502, f"The AI service could not generate the document: {exc}")
+        status_code = 429 if isinstance(exc, GeminiRateLimitError) else 504 if isinstance(exc, GeminiTimeoutError) else 502
+        raise HTTPException(status_code, exc.user_message)
     title = next((l[2:].strip() for l in text.split("\n") if l.startswith("# ")), req.doc_type)
     return {"title": title, "text": text, "terms": build_terms_table(data)}
 

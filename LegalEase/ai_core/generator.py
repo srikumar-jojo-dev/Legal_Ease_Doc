@@ -56,17 +56,23 @@ def build_docx(title, body, terms, include_logo=True) -> bytes:
         if kind == "h1":
             continue  # title already shown
         if kind == "h2":
-            doc.add_heading(text, level=2)
+            para = doc.add_heading(text, level=2)
+            para.paragraph_format.keep_together = True
+            para.paragraph_format.keep_with_next = True
         elif kind == "bullet":
-            doc.add_paragraph(text, style="List Bullet")
+            para = doc.add_paragraph(text, style="List Bullet")
+            para.paragraph_format.keep_together = True
         else:
-            doc.add_paragraph(text)
+            para = doc.add_paragraph(text)
+            para.paragraph_format.keep_together = True
 
     note = doc.add_paragraph()
     run = note.add_run(config.DISCLAIMER)
     run.italic = True
     run.font.size = Pt(8)
-    doc.sections[0].footer.paragraphs[0].text = config.COMPANY_FOOTER
+    footer = doc.sections[0].footer.paragraphs[0]
+    footer.text = config.COMPANY_FOOTER
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -99,8 +105,8 @@ def build_pdf(title, body, terms, include_logo=True) -> bytes:
         )
 
     s_title = ParagraphStyle("t", fontName=bold, fontSize=18, leading=22, alignment=TA_CENTER, spaceAfter=10)
-    s_h2 = ParagraphStyle("h2", fontName=bold, fontSize=12, leading=15, spaceBefore=10, spaceAfter=4)
-    s_body = ParagraphStyle("b", fontName=font, fontSize=10.5, leading=14.5, spaceAfter=5)
+    s_h2 = ParagraphStyle("h2", fontName=bold, fontSize=12, leading=15, spaceBefore=10, spaceAfter=4, keepWithNext=1)
+    s_body = ParagraphStyle("b", fontName=font, fontSize=10.5, leading=14.5, spaceAfter=5, allowWidows=1, allowOrphans=1)
     s_bul = ParagraphStyle("bl", parent=s_body, leftIndent=14, bulletIndent=4)
     s_small = ParagraphStyle("s", fontName=font, fontSize=8, leading=10, textColor=colors.grey)
 

@@ -19,11 +19,18 @@ Open `.env` and set `GEMINI_API_KEY=...` (get a key at https://aistudio.google.c
 Run the two servers (two terminals):
 
 ```bash
-uvicorn legalEaseAPI.main:app --reload --port 8000    # backend  -> http://localhost:8000/docs
-streamlit run frontend/app.py                         # frontend -> http://localhost:8501
+uvicorn legalEaseAPI.main:app --reload --host 0.0.0.0 --port 8000    # backend -> http://localhost:8000/docs
+streamlit run frontend/app.py --server.address 0.0.0.0 --server.port 8501  # frontend -> http://localhost:8501
 ```
 
-Or just run `run.bat` (Windows) / `./run.sh` (macOS/Linux).
+Or just run `run.bat` (Windows).
+
+## New feature highlights
+- Party-role selector for Party A / Party B so legal roles are derived from the chosen role instead of fixed positions.
+- Validation for missing names, duplicate parties, invalid dates, and API-generation failures with clear user guidance.
+- Key-term-aware generation for fees, revisions, terms, notices, and other contract specifics without repeating the summary as a duplicate clause list.
+- Improved PDF/DOCX formatting with protected heading flow, signature blocks, witness sections, and a corrected draft footer.
+- Support for English, Tamil and Hindi generation and export flows.
 
 ## Try it without an API key
 Set `LEGALEASE_MOCK=1` in `.env` and restart the backend. A template document is returned instead of calling Gemini.
